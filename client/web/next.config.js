@@ -2,7 +2,7 @@ const withPWA = require('next-pwa');
 const runtimeCaching = require('next-pwa/cache');
 
 module.exports = withPWA({
-  basePath: process.env.NEXT_PUBLIC_BASE_PATH,
+  output: 'export',
   pwa: {
     dest: 'public',
     register: true,

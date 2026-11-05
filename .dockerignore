@@ -1,8 +1,9 @@
 *
-
-!/client/src
-!/client/package*
-!/client/tsconfig.json
+!/client/web
+!/client/nginx.conf
 
 !/server/src
 !/server/Cargo.*
+
+!/Dockerfile*
+!/docker-compose.yml
