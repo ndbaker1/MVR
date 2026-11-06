@@ -8,7 +8,10 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-
+    develop:
+      watch:
+        - action: rebuild
+          path: client
   backend:
     build:
       context: .
@@ -19,3 +22,7 @@ services:
       - RUST_LOG=info
       - PORT=42069
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: server

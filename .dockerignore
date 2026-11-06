@@ -1,6 +1,5 @@
 *
 !/client/web
-!/client/nginx.conf
 
 !/server/src
 !/server/Cargo.*

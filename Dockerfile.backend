@@ -1,5 +1,4 @@
-# Build Rust server with cargo cache mounts
-FROM rust:bookworm as builder
+FROM rust:bookworm AS builder
 WORKDIR /home/rust/src
 COPY server/Cargo.* ./
 COPY server/src/ src/
