@@ -33,11 +33,19 @@ const App = () => {
     const loadObserver = (i: number) => {
         setShowControl(false);
         setEyeClientLoading(true);
-        const updateObserverClient = () => {
+        let observerCleanup: (() => void) | undefined;
+        const updateObserverClient = async () => {
             const client = new EyeClient(i - 1, { host: webSocketHost, callbacks: {} });
+            client.setOnDisconnect(() => {
+                observerCleanup?.();
+                setShowControl(true);
+                setEyeClient(undefined);
+                setEyeClientLoading(false);
+            });
             Recorder.capture((im) => client.send(im.data));
             client.initSensors();
-            initObserverView({ code: renderCode }, new ObserverClient(i, { host: webSocketHost, callbacks: {} }));
+            const view = await initObserverView({ code: renderCode }, new ObserverClient(i, { host: webSocketHost, callbacks: {} }));
+            observerCleanup = view.cleanup;
             setEyeClient(client);
             setEyeClientLoading(false);
         };
@@ -54,6 +62,11 @@ const App = () => {
         setRacketClientLoading(true);
         const updateRacketClient = () => {
             const client = new RacketClient(i, { host: webSocketHost, callbacks: {} });
+            client.setOnDisconnect(() => {
+                setShowControl(true);
+                setRacketClient(undefined);
+                setRacketClientLoading(false);
+            });
             Recorder.capture((im) => client.send(im.data));
             client.initSensors();
             setRacketClient(client);
@@ -81,7 +94,8 @@ const App = () => {
         <div id="app">
             <Dialog
                 opened={showControl}
-                size={"min(90vw, 30rem)"} >
+                size={"min(90vw, 30rem)"}
+                >
                 <Stack>
                     {debug ? <Button onClick={() => setShowEditor(true)}>Show Editor</Button> : <></>}
                     <Group grow>
@@ -272,6 +286,28 @@ async function initObserverView(parameters: RenderParameters, observerClient: Ob
     function animation(_time: number) {
         renderer.render(scene, camera);
     }
+
+    const cleanup = () => {
+        renderer.setAnimationLoop(null);
+        renderer.renderLists.dispose();
+        // Clear the canvas by drawing a blank frame
+        renderer.clear();
+        const screen = document.querySelector('main[id="screen"]');
+        if (screen) {
+            screen.replaceChildren();
+        }
+        renderer.dispose();
+        scene.traverse((object) => {
+            if (object instanceof THREE.Mesh) {
+                object.geometry.dispose();
+                if (object.material instanceof THREE.MeshNormalMaterial) {
+                    object.material.dispose();
+                }
+            }
+        });
+    };
+
+    return { cleanup };
 }
 
 export default App;

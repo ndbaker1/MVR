@@ -12,7 +12,22 @@ export class DynamicClient {
     public ws: WebSocket;
 
     constructor(public id: number, { host, callbacks }: DynamicClientParameters, type: string) {
-        this.ws = createServerWebSocket({ host, path: `/${type}/${id}`, ...callbacks });
+        this.ws = createServerWebSocket({
+            host,
+            path: `/${type}/${id}`,
+            ...callbacks,
+            closeCallback: (e) => {
+                callbacks.closeCallback?.(e);
+                this.onDisconnect?.(e);
+            },
+        });
+    }
+
+    /** Override to react to a websocket disconnection (e.g. return to the start page). */
+    protected onDisconnect?: (_: CloseEvent) => void;
+
+    public setOnDisconnect(cb: (_: CloseEvent) => void) {
+        this.onDisconnect = cb;
     }
 
     public static asPlayerData(data: unknown): Record<number, Pose> {
@@ -41,7 +56,16 @@ export class DynamicClient {
             startOrientationTracker(stringifySend),
         ]);
 
-        this.ws.addEventListener('error', () => killHandles.forEach(kill => kill()));
-        this.ws.addEventListener('close', () => killHandles.forEach(kill => kill()));
+        const onSocketEnd = (e: Event | CloseEvent) => {
+            killHandles.forEach(kill => kill());
+            if (e instanceof CloseEvent) {
+                this.onDisconnect?.(e);
+            } else {
+                this.onDisconnect?.(e as unknown as CloseEvent);
+            }
+        };
+
+        this.ws.addEventListener('error', onSocketEnd);
+        this.ws.addEventListener('close', onSocketEnd);
     }
 }
