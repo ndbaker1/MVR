@@ -3,31 +3,156 @@ import { startAccelerometer, startOrientationTracker } from "@services/sensors";
 import { type WebSocketCallbacks, createServerWebSocket } from "../connection";
 import type { Pose } from "../data";
 
+export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
 export type DynamicClientParameters = {
     host: string,
     callbacks: WebSocketCallbacks,
+    autoReconnect?: boolean,
 }
 
 export class DynamicClient {
     public ws: WebSocket;
+    public readonly id: number;
+    public readonly type: string;
+    private host: string;
+    private autoReconnect: boolean;
+    private callbacks: WebSocketCallbacks;
 
-    constructor(public id: number, { host, callbacks }: DynamicClientParameters, type: string) {
+    private reconnectAttempts = 0;
+    private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    private intentionalClose = false;
+
+    private status: ConnectionStatus = 'connecting';
+    private onStatusChange?: (status: ConnectionStatus) => void;
+    private onDisconnect?: (_: CloseEvent) => void;
+    private onReconnect?: () => void;
+
+    private sensorKillHandles: (() => void)[] = [];
+
+    constructor(id: number, { host, callbacks, autoReconnect = true }: DynamicClientParameters, type: string) {
+        this.id = id;
+        this.type = type;
+        this.host = host;
+        this.autoReconnect = autoReconnect;
+        this.callbacks = callbacks;
+
+        const userClose = callbacks.closeCallback;
+        const userError = callbacks.errorCallback;
+        const userOpen = callbacks.openCallback;
+
         this.ws = createServerWebSocket({
             host,
             path: `/${type}/${id}`,
-            ...callbacks,
-            closeCallback: (e) => {
-                callbacks.closeCallback?.(e);
-                this.onDisconnect?.(e);
-            },
+            closeCallback: (e) => { userClose?.(e); this.handleClose(e); },
+            errorCallback: (e) => { userError?.(e); this.handleError(); },
+            openCallback: (e) => { userOpen?.(e); this.handleOpen(); },
         });
     }
 
-    /** Override to react to a websocket disconnection (e.g. return to the start page). */
-    protected onDisconnect?: (_: CloseEvent) => void;
+    private setStatus(status: ConnectionStatus) {
+        if (this.status === status) return;
+        this.status = status;
+        this.onStatusChange?.(status);
+    }
+
+    private handleOpen = () => {
+        const wasReconnecting = this.reconnectAttempts > 0;
+        this.reconnectAttempts = 0;
+        this.setStatus('connected');
+        if (wasReconnecting) this.onReconnect?.();
+    };
+
+    private handleClose = (e: CloseEvent) => {
+        // stop reading from sensors while disconnected
+        this.sensorKillHandles.forEach(kill => kill());
+        this.sensorKillHandles = [];
+
+        this.setStatus('disconnected');
+        if (this.autoReconnect && !this.intentionalClose) {
+            // keep the client alive and retry in the background; the UI is
+            // driven by status changes (onStatusChange) rather than tearing down
+            this.scheduleReconnect();
+        } else if (!this.autoReconnect) {
+            // permanent loss with no retry configured
+            this.onDisconnect?.(e);
+        }
+        // intentionalClose: the caller (e.g. App re-connecting) manages the UI
+    };
+
+    private handleError = () => {
+        // errors normally precede a close event; let close handle reconnecting
+    };
+
+    private scheduleReconnect = () => {
+        this.setStatus('reconnecting');
+        const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
+        this.reconnectAttempts++;
+        this.reconnectTimer = setTimeout(() => this.reconnect(), delay);
+    };
+
+    private reconnect = () => {
+        this.reconnectTimer = null;
+        this.setStatus('connecting');
+        this.intentionalClose = false;
+
+        const newWs = createServerWebSocket({
+            host: this.host,
+            path: `/${this.type}/${this.id}`,
+            closeCallback: (e) => { this.callbacks.closeCallback?.(e); this.handleClose(e); },
+            errorCallback: (e) => { this.callbacks.errorCallback?.(e); this.handleError(); },
+            openCallback: (e) => { this.callbacks.openCallback?.(e); this.handleOpen(); },
+        });
+        this.ws = newWs;
+        // sensors are re-started by initSensors() which the caller re-invokes,
+        // or automatically below so a reconnect is transparent to the UI.
+        this.initSensors();
+    };
+
+    /** Override to react to a permanent websocket disconnection. */
 
     public setOnDisconnect(cb: (_: CloseEvent) => void) {
         this.onDisconnect = cb;
+    }
+
+    /** Subscribe to connection status changes (connecting/connected/reconnecting/disconnected). */
+    public setOnStatusChange(cb: (status: ConnectionStatus) => void) {
+        this.onStatusChange = cb;
+    }
+
+    /** Subscribe to successful reconnects (useful to re-attach message listeners). */
+    public setOnReconnect(cb: () => void) {
+        this.onReconnect = cb;
+    }
+
+    /** Intentionally close the connection and stop auto-reconnect. Does not
+     *  fire onDisconnect — the caller manages UI teardown/re-creation. */
+    public disconnect() {
+        this.intentionalClose = true;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        this.sensorKillHandles.forEach(kill => kill());
+        this.sensorKillHandles = [];
+        this.ws.close();
+    }
+
+    /** Attempt an immediate reconnect. */
+    public reconnectNow() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        this.reconnect();
+    }
+
+    public get isConnected() {
+        return this.status === 'connected';
+    }
+
+    public get isReconnecting() {
+        return this.status === 'reconnecting';
     }
 
     public static asPlayerData(data: unknown): Record<number, Pose> {
@@ -49,23 +174,15 @@ export class DynamicClient {
     };
 
     public async initSensors() {
+        // kill any existing sensors first
+        this.sensorKillHandles.forEach(kill => kill());
+        this.sensorKillHandles = [];
+
         const stringifySend = (data: any) => this.send(JSON.stringify(data));
 
-        const killHandles = await Promise.all([
+        this.sensorKillHandles = await Promise.all([
             startAccelerometer(stringifySend),
             startOrientationTracker(stringifySend),
-        ]);
-
-        const onSocketEnd = (e: Event | CloseEvent) => {
-            killHandles.forEach(kill => kill());
-            if (e instanceof CloseEvent) {
-                this.onDisconnect?.(e);
-            } else {
-                this.onDisconnect?.(e as unknown as CloseEvent);
-            }
-        };
-
-        this.ws.addEventListener('error', onSocketEnd);
-        this.ws.addEventListener('close', onSocketEnd);
+        ]) as (() => void)[];
     }
 }

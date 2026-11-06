@@ -7,6 +7,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
 import { EyeClient, RacketClient, ObserverClient } from '@services/clients';
 import type { Pose } from '@services/data';
+import type { ConnectionStatus } from '@services/clients/dynamic';
 
 import { BASE_PATH, WS_HOST } from './environment';
 import { Recorder } from '@services/recorder';
@@ -14,6 +15,34 @@ import { Recorder } from '@services/recorder';
 declare global {
     function debug(): void;
 }
+
+const StatusBar = ({ racketStatus, eyeStatus }: { racketStatus: ConnectionStatus; eyeStatus: ConnectionStatus }) => {
+    const row = (label: string, status: ConnectionStatus) => {
+        const color = status === 'connected' ? '#22c55e' : status === 'reconnecting' ? '#f59e0b' : '#ef4444';
+        const text = status === 'connected'
+            ? label + ' connected'
+            : status === 'reconnecting'
+                ? label + ' reconnecting…'
+                : label + ' disconnected';
+        return (
+            <Group spacing={2} align="center">
+                <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: color, display: 'inline-block', marginRight: 6 }} />
+                <span style={{ color: '#ffffff', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 13 }}>{text}</span>
+            </Group>
+        );
+    };
+    const rowBox = (children: React.ReactNode) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 6, backgroundColor: '#111827cc', border: '1px solid #374151' }}>
+            {children}
+        </div>
+    );
+    return (
+        <Group style={{ position: 'fixed', top: 10, right: 10, zIndex: 1000 }} spacing={4}>
+            {rowBox(row('Racket', racketStatus))}
+            {rowBox(row('View', eyeStatus))}
+        </Group>
+    );
+};
 
 const App = () => {
     const [debug, setDebug] = React.useState(false);
@@ -25,8 +54,10 @@ const App = () => {
 
     const [racketClient, setRacketClient] = React.useState<RacketClient>();
     const [racketClientLoading, setRacketClientLoading] = React.useState(false);
+    const [racketStatus, setRacketStatus] = React.useState<ConnectionStatus>('disconnected');
     const [eyeClient, setEyeClient] = React.useState<EyeClient>();
     const [eyeClientLoading, setEyeClientLoading] = React.useState(false);
+    const [eyeStatus, setEyeStatus] = React.useState<ConnectionStatus>('disconnected');
 
     const { host, setHost, webSocketHost } = useHost(WS_HOST);
 
@@ -36,11 +67,14 @@ const App = () => {
         let observerCleanup: (() => void) | undefined;
         const updateObserverClient = async () => {
             const client = new EyeClient(i - 1, { host: webSocketHost, callbacks: {} });
+            client.setOnStatusChange((status) => setEyeStatus(status));
             client.setOnDisconnect(() => {
+                // permanent loss: tear down and return to the connect screen
                 observerCleanup?.();
                 setShowControl(true);
                 setEyeClient(undefined);
                 setEyeClientLoading(false);
+                setEyeStatus('disconnected');
             });
             Recorder.capture((im) => client.send(im.data));
             client.initSensors();
@@ -50,8 +84,8 @@ const App = () => {
             setEyeClientLoading(false);
         };
         if (eyeClient && eyeClient.ws.readyState !== WebSocket.CLOSED) {
-            eyeClient.ws.addEventListener('close', updateObserverClient);
-            eyeClient.ws.close();
+            eyeClient.disconnect();
+            eyeClient.ws.addEventListener('close', updateObserverClient, { once: true });
         } else {
             updateObserverClient();
         }
@@ -62,10 +96,13 @@ const App = () => {
         setRacketClientLoading(true);
         const updateRacketClient = () => {
             const client = new RacketClient(i, { host: webSocketHost, callbacks: {} });
+            client.setOnStatusChange((status) => setRacketStatus(status));
             client.setOnDisconnect(() => {
+                // permanent loss: tear down and return to the connect screen
                 setShowControl(true);
                 setRacketClient(undefined);
                 setRacketClientLoading(false);
+                setRacketStatus('disconnected');
             });
             Recorder.capture((im) => client.send(im.data));
             client.initSensors();
@@ -73,8 +110,8 @@ const App = () => {
             setRacketClientLoading(false);
         };
         if (racketClient && racketClient.ws.readyState !== WebSocket.CLOSED) {
-            racketClient.ws.addEventListener('close', updateRacketClient);
-            racketClient.ws.close();
+            racketClient.disconnect();
+            racketClient.ws.addEventListener('close', updateRacketClient, { once: true });
         } else {
             updateRacketClient();
         }
@@ -92,10 +129,11 @@ const App = () => {
 
     return (
         <div id="app">
+            <StatusBar racketStatus={racketStatus} eyeStatus={eyeStatus} />
             <Dialog
                 opened={showControl}
                 size={"min(90vw, 30rem)"}
-                >
+            >
                 <Stack>
                     {debug ? <Button onClick={() => setShowEditor(true)}>Show Editor</Button> : <></>}
                     <Group grow>
@@ -228,7 +266,7 @@ async function initObserverView(parameters: RenderParameters, observerClient: Ob
     camera.position.set(2, 0, 0);
     camera.lookAt(0, 0, 0);
 
-    const { ballMesh, tableGroup, racketMesh, headMesh } = await loadMeshes();
+    const { tableGroup, racketMesh, headMesh } = await loadMeshes();
 
     scene.add(tableGroup);
     const meshes = new Map<number, THREE.Mesh>();
@@ -282,6 +320,11 @@ async function initObserverView(parameters: RenderParameters, observerClient: Ob
     };
 
     observerClient.ws.addEventListener('message', ({ data }) => update(EyeClient.asPlayerPose(data)));
+
+    // re-attach the message listener if the observer socket reconnects
+    observerClient.setOnReconnect(() => {
+        observerClient.ws.addEventListener('message', ({ data }) => update(EyeClient.asPlayerPose(data)));
+    });
 
     function animation(_time: number) {
         renderer.render(scene, camera);
