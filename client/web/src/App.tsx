@@ -27,7 +27,7 @@ const StatusBar = ({ racketStatus, eyeStatus }: { racketStatus: ConnectionStatus
         return (
             <Group spacing={2} align="center">
                 <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: color, display: 'inline-block', marginRight: 6 }} />
-                <span style={{ color: '#ffffff', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 13 }}>{text}</span>
+                <span style={{ color: '#ffffff', fontFamily: '"JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 13 }}>{text}</span>
             </Group>
         );
     };
