@@ -20,8 +20,8 @@ impl ObserverClientManager {
                         if let Err(e) = observer
                             .write_message(Message::text(serde_json::to_string(&*data).unwrap()))
                         {
-                            log::warn!("observer error [{}]", e);
-                            log::info!("removing client with id [{}]", user);
+                            tracing::warn!("observer error [{}]", e);
+                            tracing::info!("removing client with id [{}]", user);
                             return false;
                         }
 

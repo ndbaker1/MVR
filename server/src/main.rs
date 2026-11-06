@@ -18,7 +18,7 @@ use crate::client::{
 mod client;
 
 fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| String::from("42069"))
         .parse()
@@ -49,14 +49,14 @@ impl Server {
 
         let data = Arc::new(Mutex::new(ServerState::default()));
 
-        log::info!("creating handler for observers...");
+        tracing::info!("creating handler for observers...");
         let observers = Arc::new(Mutex::new(Vec::new()));
 
         let observers_clone = observers.clone();
         let data_clone = data.clone();
         thread::spawn(move || ObserverClientManager::run(data_clone, observers_clone));
 
-        log::info!("listening for connections on [{}].", listener_addr);
+        tracing::info!("listening for connections on [{}].", listener_addr);
         loop {
             match listener.accept() {
                 Ok((tcp, _addr)) => {
@@ -64,7 +64,7 @@ impl Server {
                     // when a client attempts to connect, read the URI to get extra metadata
                     let mut request_uri = None;
                     if let Ok(websocket_stream) = accept_hdr(tcp, |request: &Request, response| {
-                        log::info!("incoming client request with URI [{}].", request.uri());
+                        tracing::info!("incoming client request with URI [{}].", request.uri());
                         request_uri = Some(request.uri().clone().to_string());
                         Ok(response)
                     }) {
@@ -75,14 +75,14 @@ impl Server {
                                 if url.starts_with(RACKET_PATH) {
                                     let data = data.clone();
                                     thread::spawn(move || {
-                                        log::info!("spawning racket client with id [{}].", user);
+                                        tracing::info!("spawning racket client with id [{}].", user);
                                         DynamicClient::new(user, data, FrameType::Racket)
                                             .handle(websocket_stream)
                                     });
                                 } else if url.starts_with(HEAD_PATH) {
                                     let data = data.clone();
                                     thread::spawn(move || {
-                                        log::info!("spawning head client with id [{}].", user);
+                                        tracing::info!("spawning head client with id [{}].", user);
                                         DynamicClient::new(user, data, FrameType::Viewer)
                                             .handle(websocket_stream);
                                     });
@@ -94,17 +94,17 @@ impl Server {
                                         .expect("add new observer websocket.")
                                         .push((user, websocket_stream));
                                 } else {
-                                    log::error!(
+                                    tracing::error!(
                                         "incomming connection did not provide valid type in url."
                                     );
                                 }
                             }
-                            Err(e) => log::error!("{}", e),
+                            Err(e) => tracing::error!("{}", e),
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!("what happened [{}]", e);
+                    tracing::error!("what happened [{}]", e);
                 }
             };
         }

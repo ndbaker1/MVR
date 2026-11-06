@@ -69,7 +69,7 @@ impl DynamicClient {
                 // using text messages for json payloads and data structures
                 Message::Text(text) => match serde_json::from_str::<IMUMeasurement>(&text) {
                     Ok(client_data) => self.process_imu_measurement(client_data, super::DELTA),
-                    Err(e) => log::error!("[{}]", e),
+                    Err(e) => tracing::error!("[{}]", e),
                 },
                 // using binary messages for video stream frame data
                 Message::Binary(data) => {
@@ -79,24 +79,24 @@ impl DynamicClient {
                          &data,
                      ) {
                          Some(frame) => self.process_image_buffer(frame),
-                         None => log::error!(
+                         None => tracing::error!(
                              "failed to parse bytes as [`ImageBuffer::<Rgba<u8>, &mut [u8]>`]. Message is {} bytes long.", data.len()
                          ),
                      }
                 }
-                Message::Close(frame) => log::info!("connection closing [{:?}]", frame),
-                Message::Ping(ping) => log::info!("ping [{:?}]", ping),
-                Message::Pong(pong) => log::info!("pong [{:?}]", pong),
-                _ => log::warn!("unused message [{:?}]", message),
+                Message::Close(frame) => tracing::info!("connection closing [{:?}]", frame),
+                Message::Ping(ping) => tracing::info!("ping [{:?}]", ping),
+                Message::Pong(pong) => tracing::info!("pong [{:?}]", pong),
+                _ => tracing::warn!("unused message [{:?}]", message),
             }
         }
 
-        log::info!("cleaning up data for client [{}].", self.user);
+        tracing::info!("cleaning up data for client [{}].", self.user);
         self.cleanup_client();
-        log::info!("racket client [{}] disconnected.", self.user);
+        tracing::info!("racket client [{}] disconnected.", self.user);
     }
 
-    /// Compute updates to positional and motion data from the IMU measurements takes from the client device.
+    /// Compute updates to positional and motion data from the IMU measurements taken from the client device.
     /// This could be acclerometers, gyroscopes, magnometers, etc...
     fn process_imu_measurement(&mut self, imu_measurement: IMUMeasurement, delta: f64) {
         match imu_measurement {
