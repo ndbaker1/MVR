@@ -12,6 +12,8 @@ services:
       watch:
         - action: rebuild
           path: client
+        - action: rebuild
+          path: Dockerfile.frontend
   backend:
     build:
       context: .
@@ -19,10 +21,12 @@ services:
     ports:
       - "42069:42069"
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=info,server=trace
       - PORT=42069
     restart: unless-stopped
     develop:
       watch:
         - action: rebuild
           path: server
+        - action: rebuild
+          path: Dockerfile.backend
