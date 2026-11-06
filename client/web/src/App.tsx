@@ -1,27 +1,24 @@
-import React from "react";
-import Editor from "@monaco-editor/react";
-import { AccessPoint, FileArrowLeft } from "tabler-icons-react";
-import { ActionIcon, Button, Dialog, Drawer, Group, Loader, Menu, SimpleGrid, Stack, TextInput, Tooltip } from "@mantine/core";
-
+import React from 'react';
+import Editor from '@monaco-editor/react';
+import { AccessPoint, FileArrowLeft } from 'tabler-icons-react';
+import { ActionIcon, Button, Dialog, Drawer, Group, Loader, Menu, SimpleGrid, Stack, TextInput, Tooltip } from '@mantine/core';
 import * as THREE from 'three';
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
-import { EyeClient, RacketClient, ObserverClient } from "@services/clients";
-import type { Pose } from "@services/data";
+import { EyeClient, RacketClient, ObserverClient } from '@services/clients';
+import type { Pose } from '@services/data';
 
-import { BASE_PATH, WS_HOST } from "../../environment";
-import { Recorder } from "@services/recorder";
-
+import { BASE_PATH, WS_HOST } from './environment';
+import { Recorder } from '@services/recorder';
 
 declare global {
     function debug(): void;
 }
 
-const Home = () => {
+const App = () => {
     const [debug, setDebug] = React.useState(false);
     const [showEditor, setShowEditor] = React.useState(false);
     const [renderCode, setRenderCode] = React.useState('');
-    // attach the debug caller to the window object
     React.useEffect(() => { window.debug = () => setDebug(true); }, []);
 
     const [showControl, setShowControl] = React.useState(true);
@@ -78,7 +75,6 @@ const Home = () => {
             case 'racket': loadRacket(id); break;
             case 'observer': loadObserver(id); break;
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (
@@ -171,16 +167,12 @@ const Home = () => {
                 />
             </Drawer>
             <main id="screen"></main>
-        </div >
+        </div>
     );
 };
 
-export default Home;
-
-
 function useHost(defaultHostInput: string) {
     const [host, setHost] = React.useState('');
-    // replace everything before the '://' part of the url, and remove trailing '/'
     const webSocketHost = (host || defaultHostInput).replaceAll(/.*:\/\/|\/$/gi, '');
     return { host, setHost, webSocketHost };
 }
@@ -190,7 +182,6 @@ type RenderParameters = {
 }
 
 async function loadMeshes() {
-
     const loader = new OBJLoader();
     const material = new THREE.MeshNormalMaterial();
 
@@ -216,9 +207,7 @@ async function loadMeshes() {
     };
 }
 
-
 async function initObserverView(parameters: RenderParameters, observerClient: ObserverClient) {
-
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -228,9 +217,6 @@ async function initObserverView(parameters: RenderParameters, observerClient: Ob
     const { ballMesh, tableGroup, racketMesh, headMesh } = await loadMeshes();
 
     scene.add(tableGroup);
-    // scene.add(ballMesh);
-    // get ball geometry
-    // const geometry = new THREE.SphereGeometry(0.2, 20, 20);
     const meshes = new Map<number, THREE.Mesh>();
     const createMesh = (id: number) => {
         if (id % 3 == 0) {
@@ -252,8 +238,6 @@ async function initObserverView(parameters: RenderParameters, observerClient: Ob
         throw Error('failed to replace screen with renderer.');
     }
 
-    // Renderer to run for the client,
-    // which can be custom edited from the debug window of the app
     const observerRender: (id: number, playerPose: Pose, object?: THREE.Mesh) => void = !!parameters.code
         ? new Function('id', 'playerData', 'object', parameters.code) as any
         : (id, playerPose, object) => {
@@ -270,26 +254,24 @@ async function initObserverView(parameters: RenderParameters, observerClient: Ob
             }
         };
 
-    // Update the geometry of the scene using PlayerData
     const update = (updates: Record<string, Pose>) => {
         Object.entries(updates).forEach(([idKey, playerPose]) => {
             const id = parseInt(idKey);
-            // logic for adding new meshes when a new player connects
             if (!meshes.has(id) && observerClient.id != id) {
                 const mesh = createMesh(id);
                 meshes.set(id, mesh);
                 scene.add(mesh);
                 console.log('created mesh for id', id);
             }
-
             observerRender(id, playerPose, meshes.get(id)!);
         });
     };
 
-    // Trigger scene update upon each message recieved from the server
     observerClient.ws.addEventListener('message', ({ data }) => update(EyeClient.asPlayerPose(data)));
 
-    function animation(time: number) {
+    function animation(_time: number) {
         renderer.render(scene, camera);
     }
 }
+
+export default App;

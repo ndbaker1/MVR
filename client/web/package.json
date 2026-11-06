@@ -1,37 +1,35 @@
 {
   "name": "phone-pong",
-  "homepage": "https://github.com/ndbaker1/MVR",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "lint:fix": "npm run lint -- --fix"
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@emotion/react": "^11.10.0",
-    "@emotion/server": "^11.10.0",
-    "@mantine/core": "^5.1.0",
-    "@mantine/hooks": "^5.1.0",
-    "@mantine/next": "^5.1.0",
-    "@monaco-editor/react": "^4.4.5",
-    "monaco-editor": "^0.34.0",
-    "next": "14.2.21",
-    "next-pwa": "^5.5.5",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "tabler-icons-react": "^1.54.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/server": "^11.11.0",
+    "@mantine/core": "^5.10.5",
+    "@mantine/hooks": "^5.10.5",
+    "@monaco-editor/react": "^4.7.0",
+    "monaco-editor": "^0.34.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tabler-icons-react": "^1.56.0",
     "three": "^0.143.0"
   },
   "devDependencies": {
-    "@types/node": "18.0.0",
-    "@types/react": "18.0.14",
-    "@types/react-dom": "18.0.5",
-    "@types/three": "^0.143.0",
-    "eslint": "8.18.0",
-    "eslint-config-next": "12.2.3",
-    "typescript": "4.7.4"
+    "@types/node": "^18.19.130",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/three": "^0.143.2",
+    "typescript": "^5.9.3",
+    "vite": "^4.5.14",
+    "vite-plugin-pwa": "^0.14.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "biome": "^0.3.3"
   }
 }
