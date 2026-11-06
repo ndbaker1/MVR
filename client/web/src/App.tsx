@@ -1,7 +1,7 @@
 import React from 'react';
 import Editor from '@monaco-editor/react';
 import { AccessPoint, FileArrowLeft } from 'tabler-icons-react';
-import { ActionIcon, Button, Dialog, Drawer, Group, Loader, Menu, SimpleGrid, Stack, TextInput, Tooltip } from '@mantine/core';
+import { ActionIcon, Button, Dialog, Drawer, Flex, Group, Loader, Menu, SimpleGrid, Stack, TextInput, Tooltip } from '@mantine/core';
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
@@ -38,8 +38,10 @@ const StatusBar = ({ racketStatus, eyeStatus }: { racketStatus: ConnectionStatus
     );
     return (
         <Group style={{ position: 'fixed', top: 10, right: 10, zIndex: 1000 }} spacing={4}>
-            {rowBox(row('Racket', racketStatus))}
-            {rowBox(row('View', eyeStatus))}
+            <Flex direction={'column'} gap={'xs'}>
+                {rowBox(row('racket', racketStatus))}
+                {rowBox(row('view', eyeStatus))}
+            </Flex>
         </Group>
     );
 };
