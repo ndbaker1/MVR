@@ -1,4 +1,5 @@
 import { startAccelerometer, startOrientationTracker } from "@services/sensors";
+import { VisionSensor, type VisionPose } from "@services/sensors/vision";
 
 import { type WebSocketCallbacks, createServerWebSocket } from "../connection";
 import type { Pose } from "../data";
@@ -29,6 +30,14 @@ export class DynamicClient {
     private onReconnect?: () => void;
 
     private sensorKillHandles: (() => void)[] = [];
+
+    private visionSensor: VisionSensor | null = null;
+    private videoElement: HTMLVideoElement | null = null;
+
+    /** Target device ID for vision poses. When set, every vision pose from this
+     *  webcam is tagged with this target_id so the server corrects that device's
+     *  pose instead of this device's own pose. Null means vision is for self. */
+    private visionTargetId: number | null = null;
 
     constructor(id: number, { host, callbacks, autoReconnect = true }: DynamicClientParameters, type: string) {
         this.id = id;
@@ -67,6 +76,7 @@ export class DynamicClient {
         // stop reading from sensors while disconnected
         this.sensorKillHandles.forEach(kill => kill());
         this.sensorKillHandles = [];
+        this.stopVision();
 
         this.setStatus('disconnected');
         if (this.autoReconnect && !this.intentionalClose) {
@@ -135,7 +145,98 @@ export class DynamicClient {
         }
         this.sensorKillHandles.forEach(kill => kill());
         this.sensorKillHandles = [];
+        this.stopVision();
         this.ws.close();
+    }
+
+    /** Initialize the webcam + MediaPipe vision sensor for absolute pose tracking.
+     *  If canvasElement is provided, tracking landmarks will be drawn on it. */
+    public async initVision(
+        videoElement: HTMLVideoElement,
+        canvasElement?: HTMLCanvasElement,
+        config?: { enableRightHand?: boolean }
+    ) {
+        this.stopVision();
+
+        this.videoElement = videoElement;
+
+        const visionCallbacks = {
+            onPose: (pose: VisionPose) => {
+                if (this.ws.readyState === WebSocket.OPEN) {
+                    this.sendVisionPose(pose.position, pose.orientation, pose.target_id);
+                }
+            },
+            onError: (error: Error) => {
+                console.error('Vision sensor error:', error);
+            },
+        };
+
+        this.visionSensor = new VisionSensor(visionCallbacks, { enableRightHand: config?.enableRightHand ?? false });
+        await this.visionSensor.start(videoElement);
+        if (canvasElement) {
+            this.visionSensor.setCanvas(canvasElement);
+        }
+    }
+
+    /** Initialize the webcam + MediaPipe vision sensor for absolute pose tracking,
+     *  optionally targeting another device for pose correction.
+     *  If canvasElement is provided, tracking landmarks will be drawn on it. */
+    public async initVisionForTarget(
+        videoElement: HTMLVideoElement,
+        target_id?: number,
+        canvasElement?: HTMLCanvasElement,
+        config?: { enableRightHand?: boolean }
+    ) {
+        if (target_id !== undefined) {
+            this.setVisionTargetId(target_id);
+        }
+        await this.initVision(videoElement, canvasElement, config);
+    }
+
+    /** Set the target device ID for vision poses. When set, every vision pose
+     *  from this webcam is tagged with this target_id so the server corrects
+     *  that device's pose instead of this device's own pose. Null = vision for self. */
+    public setVisionTargetId(target_id: number | null) {
+        this.visionTargetId = target_id;
+    }
+
+    /** Get the current vision target device ID. */
+    public getVisionTargetId(): number | null {
+        return this.visionTargetId;
+    }
+
+    /** Send a vision pose measurement to the server. If target_id is provided,
+     *  overrides the client's configured visionTargetId.
+     *  (useful when one device's webcam tracks another device). */
+    public sendVisionPose(
+        position: [number, number, number],
+        orientation: [number, number, number, number],
+        target_id?: number
+    ) {
+        if (this.ws.readyState !== WebSocket.OPEN) return;
+        this.send(
+            JSON.stringify({
+                type: 'Vision',
+                data: {
+                    target_id: target_id ?? this.visionTargetId ?? null,
+                    position,
+                    orientation,
+                },
+            })
+        );
+    }
+
+    /** Set the canvas element for drawing the vision tracking overlay. */
+    public setVisionCanvas(canvasElement: HTMLCanvasElement | null) {
+        this.visionSensor?.setCanvas(canvasElement);
+    }
+
+    public stopVision() {
+        if (this.visionSensor) {
+            this.visionSensor.stop();
+            this.visionSensor = null;
+        }
+        this.videoElement = null;
     }
 
     /** Attempt an immediate reconnect. */
@@ -185,4 +286,5 @@ export class DynamicClient {
             startOrientationTracker(stringifySend),
         ]) as (() => void)[];
     }
+
 }

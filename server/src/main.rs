@@ -39,6 +39,7 @@ type ServerState = HashMap<usize, Pose>;
 
 const RACKET_PATH: &str = "racket";
 const HEAD_PATH: &str = "head";
+const WEBCAM_PATH: &str = "webcam";
 const OBSERVER_PATH: &str = "observer";
 
 struct Server;
@@ -85,6 +86,13 @@ impl Server {
                                         tracing::info!("spawning head client with id [{}].", user);
                                         DynamicClient::new(user, data, FrameType::Viewer)
                                             .handle(websocket_stream);
+                                    });
+                                } else if url.starts_with(WEBCAM_PATH) {
+                                    let data = data.clone();
+                                    thread::spawn(move || {
+                                        tracing::info!("spawning webcam client with id [{}].", user);
+                                        DynamicClient::new(user, data, FrameType::Viewer)
+                                            .handle(websocket_stream)
                                     });
                                 } else if url.starts_with(OBSERVER_PATH) {
                                     // observer websockets will be added to a Vec that way each does client doesn't try to acquire a lock to the data mutex.

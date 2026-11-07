@@ -6,8 +6,9 @@ Implement an error-state Kalman filter in the Rust server that processes IMU mea
 ## Status: COMPLETE ✓
 
 ## Implemented Deliverables
-1. **IMU filter implementation** in `server/src/imu_filter.rs`
-   - Error-state Kalman filter with 9-dimensional state [position, velocity, orientation error, gyro bias, accel bias]
+1. **IMU filter implementation** in `server/src/client/imu_filter.rs`
+   - Error-state Kalman filter with 15-dimensional error state [position error(3), velocity error(3), orientation error(3), gyro bias error(3), accel bias error(3)]
+   - Nominal state tracks position, velocity, orientation (quaternion), gyro bias, accel bias
    - Prediction steps: `predict_gyro()` for angular velocity, `predict_accel()` for specific force
    - Correction steps: `zero_velocity_update()` (ZUPT), `gravity_align()`, `vision_position_update()`
    - Joseph form covariance update for numerical stability
@@ -22,7 +23,8 @@ Implement an error-state Kalman filter in the Rust server that processes IMU mea
 3. **Raw IMU logging** - Structure supports logging (IMULogger trait defined), CSV logging ready for implementation
 
 ## Technical Details
-- **State**: [position(3), velocity(3), orientation_error(3), gyro_bias(3), accel_bias(3)] = 9 dimensions
+- **Error State**: [position error(3), velocity error(3), orientation error(3), gyro bias error(3), accel bias error(3)] = 15 dimensions
+- **Nominal State**: position(3), velocity(3), orientation quaternion(4), gyro bias(3), accel bias(3)
 - **Predictions**: 
   - `predict_gyro(omega, dt)` - propagates orientation with gyro bias correction
   - `predict_accel(accel, dt)` - propagates position/velocity with accel bias correction

@@ -6,6 +6,7 @@ use std::{
 
 use image::{ImageBuffer, Rgba};
 use once_cell::sync::Lazy;
+use quaternion;
 use serde::Deserialize;
 use slamr::slam::tracker::{SizedFeature, Tracker};
 use tungstenite::{Message, WebSocket};
@@ -20,6 +21,14 @@ pub type Vec3 = [f64; 3];
 enum IMUMeasurement {
     Orientation(Quaternion),
     Acceleration(Vec3),
+    /// Vision pose data from webcam/MediaPipe client
+    /// target_id: if Some, this vision correction is for another device (updated in shared ServerState)
+    ///          if None, this vision correction is for the sending device itself
+    Vision {
+        target_id: Option<usize>,
+        position: Vec3,
+        orientation: Quaternion,
+    },
 }
 
 pub enum FrameType {
@@ -55,7 +64,7 @@ impl DynamicClient {
             component,
             position_data,
             position: [0.0, 0.0, 0.0],
-            orientation: [0.0, 0.0, 0.0, 0.0],
+            orientation: [1.0, 0.0, 0.0, 0.0],
             velocity: [0.0, 0.0, 0.0],
             acceleration: [0.0, 0.0, 0.0],
             stream_config: (150, 150),
@@ -127,6 +136,40 @@ impl DynamicClient {
             IMUMeasurement::Orientation(orientation_measurement) => {
                 self.orientation = preprocess_orientation(orientation_measurement, &self.component);
             }
+            IMUMeasurement::Vision {
+                target_id,
+                position,
+                orientation,
+            } => {
+                tracing::trace!(
+                    "vision data from device [{}]: pos=[{:.3},{:.3},{:.3}], ori=[{:.3},{:.3},{:.3},{:.3}]",
+                    self.user,
+                    position[0],
+                    position[1],
+                    position[2],
+                    orientation[0],
+                    orientation[1],
+                    orientation[2],
+                    orientation[3]
+                );
+                if let Some(target_id) = target_id {
+                    // Vision correction for another device — update shared ServerState directly
+                    // so observers see the corrected pose immediately.
+                    if let Ok(mut data) = self.position_data.lock() {
+                        data.insert(
+                            target_id,
+                            Pose {
+                                position,
+                                orientation,
+                            },
+                        );
+                    }
+                } else {
+                    // Vision data for the sending device — override local state.
+                    self.position = position;
+                    self.orientation = orientation;
+                }
+            }
         }
 
         self.update_server_state();
@@ -156,6 +199,25 @@ impl DynamicClient {
         // remove the user data once they disconnect
         self.position_data.lock().unwrap().remove(&self.user);
     }
+}
+
+/// Process accelerometer measurements to accomodate phone rotation
+fn preproccess_acceleration(
+    acceleration: Vec3,
+    orientation: &Quaternion,
+    component: &FrameType,
+) -> Vec3 {
+    let [ax, ay, az] = acceleration;
+    let [rx, ry, rz, w] = *orientation;
+    quaternion::rotate_vector(
+        (w, [rx, ry, rz]),
+        match component {
+            // see rotation logic, then apply the negated transformation since we have no valid negative 'w' component
+            // undos: *rotation = [-x, -z, y, -w];
+            FrameType::Racket => [ax, az, -ay],
+            FrameType::Viewer => [ax, ay, az],
+        },
+    )
 }
 
 /// Preprocess rotations based on orientation of phone
@@ -188,25 +250,6 @@ fn preprocess_orientation(orientation: Quaternion, component: &FrameType) -> Qua
             [-y, z, -x, w]
         }
     }
-}
-
-/// Process accelerometer measurements to accomodate phone rotation
-fn preproccess_acceleration(
-    acceleration: Vec3,
-    orientation: &Quaternion,
-    component: &FrameType,
-) -> Vec3 {
-    let [ax, ay, az] = acceleration;
-    let [rx, ry, rz, w] = *orientation;
-    quaternion::rotate_vector(
-        (w, [rx, ry, rz]),
-        match component {
-            // see rotation logic, then apply the negated transformation since we have no valid negative 'w' component
-            // undos: *rotation = [-x, -z, y, -w];
-            FrameType::Racket => [ax, az, -ay],
-            FrameType::Viewer => [ax, ay, az],
-        },
-    )
 }
 
 type PositionSnapshot = (Vec<SizedFeature>, Vec3);
